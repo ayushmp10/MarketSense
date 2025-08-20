@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Financial News Sentiment Analyzer</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Sentiment Analysis Library - Browser compatible version -->
+    <script src="https://unpkg.com/sentiment@5.0.2/build/sentiment.min.js"></script>
+
+    <style>
+        /* Use the Inter font family */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Simple spinner animation */
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid #ffffff;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white antialiased">
+
+    <div class="container mx-auto p-4 sm:p-6 md:p-8 max-w-3xl">
+        
+        <!-- Header Section -->
+        <header class="text-center mb-8">
+            <h1 class="text-3xl sm:text-4xl font-bold text-cyan-400 mb-2">Financial News Sentiment Analyzer</h1>
+            <p class="text-gray-400">Enter a stock ticker to analyze the latest news sentiment.</p>
+        </header>
+
+        <!-- Input Form -->
+        <div class="bg-gray-800 p-6 rounded-xl shadow-lg mb-8">
+            <form id="ticker-form" class="flex flex-col sm:flex-row gap-4">
+                <input 
+                    type="text" 
+                    id="ticker-input" 
+                    placeholder="e.g., AAPL, TSLA, GOOGL" 
+                    class="flex-grow bg-gray-700 text-white placeholder-gray-500 rounded-lg px-4 py-3 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition duration-200"
+                >
+                <button 
+                    type="submit" 
+                    class="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-6 rounded-lg transition duration-200 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-opacity-75"
+                >
+                    Analyze Sentiment
+                </button>
+            </form>
+        </div>
+
+        <!-- Results Section -->
+        <main id="results-section">
+            <!-- Loading Spinner -->
+            <div id="loader" class="hidden justify-center items-center py-8">
+                <div class="spinner"></div>
+            </div>
+
+            <!-- Error Message -->
+            <div id="error-message" class="hidden bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg text-center"></div>
+
+            <!-- Overall Sentiment -->
+            <div id="overall-sentiment" class="hidden text-center bg-gray-800 p-4 rounded-xl mb-6">
+                <h2 class="text-xl font-semibold">Overall Sentiment</h2>
+                <p id="overall-sentiment-text" class="text-3xl font-bold mt-2"></p>
+            </div>
+
+            <!-- News Articles List -->
+            <div id="articles-container" class="space-y-4">
+                <!-- Articles will be injected here by JavaScript -->
+            </div>
+        </main>
+
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        // IMPORTANT: Get your free API key from https://newsapi.org/ and paste it here.
+        const NEWS_API_KEY = '55318ea279864b8891f7545c161efd9c'; 
+
+        // --- DOM ELEMENT REFERENCES ---
+        const form = document.getElementById('ticker-form');
+        const input = document.getElementById('ticker-input');
+        const loader = document.getElementById('loader');
+        const errorMessage = document.getElementById('error-message');
+        const overallSentimentContainer = document.getElementById('overall-sentiment');
+        const overallSentimentText = document.getElementById('overall-sentiment-text');
+        const articlesContainer = document.getElementById('articles-container');
+
+        // --- INITIALIZE SENTIMENT ANALYZER ---
+        // Enhanced sentiment analysis function with financial-specific words
+        function simpleSentimentAnalysis(text) {
+            const positiveWords = [
+                // General positive
+                'good', 'great', 'excellent', 'positive', 'strong', 'success', 'win', 'best', 'top', 'high', 'higher', 'improve', 'better',
+                // Financial positive
+                'growth', 'profit', 'gain', 'up', 'rise', 'boost', 'bullish', 'buy', 'upgrade', 'outperform', 'beat', 'exceed', 'surpass',
+                'increase', 'surge', 'rally', 'soar', 'jump', 'climb', 'advance', 'momentum', 'optimistic', 'confidence', 'revenue',
+                'earnings', 'dividend', 'expansion', 'breakthrough', 'innovation', 'launch', 'partnership', 'acquisition', 'merger',
+                'record', 'milestone', 'achievement', 'recovery', 'rebound', 'oversold', 'undervalued', 'opportunity'
+            ];
+            
+            const negativeWords = [
+                // General negative
+                'bad', 'terrible', 'negative', 'weak', 'poor', 'worst', 'low', 'lower', 'fail', 'concern', 'worry', 'risk', 'problem',
+                // Financial negative
+                'loss', 'decline', 'down', 'fall', 'drop', 'bearish', 'sell', 'downgrade', 'underperform', 'miss', 'disappoint',
+                'decrease', 'plunge', 'crash', 'slump', 'tumble', 'slide', 'retreat', 'correction', 'volatility', 'uncertainty',
+                'debt', 'deficit', 'bankruptcy', 'layoffs', 'cut', 'reduce', 'warning', 'caution', 'penalty', 'fine', 'lawsuit',
+                'investigation', 'scandal', 'fraud', 'overvalued', 'bubble', 'recession', 'slowdown', 'crisis'
+            ];
+            
+            const words = text.toLowerCase().split(/\W+/);
+            let score = 0;
+            
+            words.forEach(word => {
+                if (positiveWords.includes(word)) score += 1;
+                if (negativeWords.includes(word)) score -= 1;
+            });
+            
+            return {
+                score: score,
+                comparative: score / Math.max(words.length, 1),
+                tokens: words
+            };
+        }
+
+        // Try to use external sentiment library, fallback to simple analysis
+        let sentimentAnalyzer;
+        try {
+            sentimentAnalyzer = typeof Sentiment !== 'undefined' ? new Sentiment() : null;
+        } catch (e) {
+            sentimentAnalyzer = null;
+        }
+
+        // --- EVENT LISTENER ---
+        form.addEventListener('submit', handleFormSubmit);
+
+        /**
+         * Handles the form submission event.
+         * @param {Event} e - The form submission event.
+         */
+        async function handleFormSubmit(e) {
+            e.preventDefault();
+            const ticker = input.value.trim().toUpperCase();
+            
+            if (!ticker) {
+                displayError('Please enter a stock ticker.');
+                return;
+            }
+            
+            if (NEWS_API_KEY === 'YOUR_NEWSAPI_KEY_HERE') {
+                displayError('Please add your NewsAPI key to the script.');
+                return;
+            }
+
+            // Reset UI for new analysis
+            resetUI();
+            loader.classList.remove('hidden');
+            loader.classList.add('flex');
+
+            try {
+                // Fetch news articles from the API
+                const articles = await fetchNews(ticker);
+
+                if (articles.length === 0) {
+                    displayError(`No recent news found for the ticker "${ticker}".`);
+                    return;
+                }
+
+                // Analyze sentiment for each article
+                const analyzedArticles = analyzeArticles(articles);
+                
+                // Display the results on the page
+                displayResults(analyzedArticles);
+
+            } catch (error) {
+                console.error('Error:', error);
+                displayError(error.message);
+            } finally {
+                // Hide loader regardless of outcome
+                loader.classList.add('hidden');
+                loader.classList.remove('flex');
+            }
+        }
+
+        /**
+         * Fetches news articles for a given stock ticker from NewsAPI.
+         * @param {string} ticker - The stock ticker symbol.
+         * @returns {Promise<Array>} A promise that resolves to an array of articles.
+         */
+        async function fetchNews(ticker) {
+            // Enhanced search query to get more relevant financial news
+            // We search for the ticker along with financial keywords to improve relevance
+            const searchQuery = `${ticker} AND (stock OR shares OR earnings OR financial OR investment OR market OR trading)`;
+            const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(searchQuery)}&sortBy=publishedAt&language=en&pageSize=20&apiKey=${NEWS_API_KEY}`;
+            
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(`Failed to fetch news: ${errorData.message || response.statusText}`);
+            }
+
+            const data = await response.json();
+            
+            // Filter articles to ensure they contain the ticker symbol in title or description
+            const relevantArticles = data.articles.filter(article => {
+                const title = (article.title || '').toLowerCase();
+                const description = (article.description || '').toLowerCase();
+                const tickerLower = ticker.toLowerCase();
+                
+                return title.includes(tickerLower) || description.includes(tickerLower);
+            });
+            
+            return relevantArticles;
+        }
+
+        /**
+         * Analyzes the sentiment of each article's title and description.
+         * @param {Array} articles - An array of news articles.
+         * @returns {Array} An array of articles with sentiment scores.
+         */
+        function analyzeArticles(articles) {
+            return articles.map(article => {
+                // Analyze both title and description for better sentiment accuracy
+                const title = article.title || '';
+                const description = article.description || '';
+                const combinedText = `${title} ${description}`;
+                
+                let result;
+                
+                if (sentimentAnalyzer) {
+                    result = sentimentAnalyzer.analyze(combinedText);
+                } else {
+                    result = simpleSentimentAnalysis(combinedText);
+                }
+                
+                return {
+                    ...article,
+                    sentiment: result // Contains score, comparative, etc.
+                };
+            });
+        }
+
+        /**
+         * Displays the analyzed articles and overall sentiment on the page.
+         * @param {Array} analyzedArticles - The articles with sentiment data.
+         */
+        function displayResults(analyzedArticles) {
+            // Calculate the average sentiment score
+            const totalScore = analyzedArticles.reduce((sum, article) => sum + article.sentiment.score, 0);
+            const averageScore = totalScore / analyzedArticles.length;
+
+            // Display overall sentiment
+            const { text, colorClass } = getSentimentDetails(averageScore);
+            overallSentimentText.textContent = text;
+            overallSentimentText.className = `text-3xl font-bold mt-2 ${colorClass}`;
+            overallSentimentContainer.classList.remove('hidden');
+
+            // Display each article
+            analyzedArticles.forEach(article => {
+                const articleElement = createArticleCard(article);
+                articlesContainer.appendChild(articleElement);
+            });
+        }
+
+        /**
+         * Creates an HTML element for a single news article card.
+         * @param {object} article - The article data.
+         * @returns {HTMLElement} The created card element.
+         */
+        function createArticleCard(article) {
+            const card = document.createElement('div');
+            card.className = 'bg-gray-800 p-4 rounded-lg border border-gray-700 hover:border-cyan-500 transition duration-200';
+
+            const sentimentDetails = getSentimentDetails(article.sentiment.score);
+
+            card.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <h3 class="text-lg font-semibold text-gray-100 mb-2">
+                        <a href="${article.url}" target="_blank" rel="noopener noreferrer" class="hover:text-cyan-400">
+                            ${article.title}
+                        </a>
+                    </h3>
+                    <span class="text-sm font-medium ${sentimentDetails.colorClass} bg-gray-700 px-2 py-1 rounded-md ml-4 flex-shrink-0">${sentimentDetails.text}</span>
+                </div>
+                <p class="text-sm text-gray-400">Source: ${article.source.name}</p>
+            `;
+            return card;
+        }
+
+        /**
+         * Determines the sentiment label and color based on a score.
+         * @param {number} score - The sentiment score.
+         * @returns {{text: string, colorClass: string}}
+         */
+        function getSentimentDetails(score) {
+            // More sensitive thresholds for better sentiment classification
+            if (score > 0.5) return { text: 'Positive', colorClass: 'text-green-400' };
+            if (score < -0.5) return { text: 'Negative', colorClass: 'text-red-400' };
+            if (score > 0) return { text: 'Slightly Positive', colorClass: 'text-green-300' };
+            if (score < 0) return { text: 'Slightly Negative', colorClass: 'text-red-300' };
+            return { text: 'Neutral', colorClass: 'text-yellow-400' };
+        }
+
+        /**
+         * Displays an error message in the UI.
+         * @param {string} message - The error message to display.
+         */
+        function displayError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.remove('hidden');
+        }
+
+        /**
+         * Resets the UI to its initial state before a new analysis.
+         */
+        function resetUI() {
+            errorMessage.classList.add('hidden');
+            overallSentimentContainer.classList.add('hidden');
+            articlesContainer.innerHTML = '';
+        }
+
+    </script>
+</body>
+</html>
