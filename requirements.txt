@@ -1,0 +1,4 @@
+textblob
+python-dotenv
+flask_cors
+flask
